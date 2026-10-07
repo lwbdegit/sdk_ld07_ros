@@ -61,14 +61,40 @@ int main(int argc, char **argv)
 		std::cout << "get param successfull!!" << std::endl;
 		lidar_pkg->SendCmd(cmd_port, THIS_DEVICE_ADDREESS, PACK_GET_DISTANCE);
 		std::cout << "SEND PACK_GET_DISTANCE CMD" << std::endl;
+		std::cout << "publishing PointCloud2 on /LD07/LDLiDAR" << std::endl;
 
+		ros::Rate rate(50);
+		ros::Time last_stat = ros::Time::now();
+		uint64_t published = 0;
+		uint64_t last_published = 0;
+		uint64_t last_parsed = 0;
 		while (ros::ok())
 		{
 			if (lidar_pkg->IsFrameReady())
 			{
 				lidar_pub.publish(lidar_pkg->GetPointCloud2());
 				lidar_pkg->ResetFrameReady();
+				published++;
 			}
+
+			if ((ros::Time::now() - last_stat).toSec() >= 1.0)
+			{
+				uint64_t parsed = lidar_pkg->FramesParsed();
+				ROS_INFO("pointcloud %lu Hz, parsed %lu frames, serial %lu bytes",
+				         static_cast<unsigned long>(published - last_published),
+				         static_cast<unsigned long>(parsed - last_parsed),
+				         static_cast<unsigned long>(lidar_pkg->RxBytes()));
+				if (parsed == last_parsed)
+				{
+					lidar_pkg->SendCmd(cmd_port, THIS_DEVICE_ADDREESS, PACK_GET_DISTANCE);
+					ROS_WARN("no new distance frame in the last second, resend start command");
+				}
+				last_published = published;
+				last_parsed = parsed;
+				last_stat = ros::Time::now();
+			}
+			ros::spinOnce();
+			rate.sleep();
 		}
 	}
 	else

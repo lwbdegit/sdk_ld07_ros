@@ -5,6 +5,8 @@
 #include <vector>
 #include <iostream>
 #include <array>
+#include <atomic>
+#include <mutex>
 #include "cmd_interface_linux.h"
 #include "trnet.h"
 
@@ -29,10 +31,16 @@ public:
 	RTRNet();
 	void SendCmd(CmdInterfaceLinux &port, uint8_t address, uint8_t id);
 	bool UnpackData(const uint8_t *data, uint32_t len);
-	void ResetFrameReady() {frame_ready_ = false;}
-	sensor_msgs::PointCloud2 GetPointCloud2() {return output;}
-	bool IsParametersReady(void) { return parameters_ready_; }
-	bool IsFrameReady(void) { return frame_ready_; } /*Lidar data frame is ready*/
+	void ResetFrameReady() {frame_ready_.store(false);}
+	sensor_msgs::PointCloud2 GetPointCloud2()
+	{
+		std::lock_guard<std::mutex> lock(cloud_mutex_);
+		return output;
+	}
+	bool IsParametersReady(void) { return parameters_ready_.load(); }
+	bool IsFrameReady(void) { return frame_ready_.load(); } /*Lidar data frame is ready*/
+	uint64_t RxBytes(void) const { return rx_bytes_.load(); }
+	uint64_t FramesParsed(void) const { return frames_parsed_.load(); }
 
 
 
@@ -43,8 +51,12 @@ private:
 	uint32_t coe_[4];
 	uint16_t coe_u_;
 	uint16_t coe_v_;
-	bool parameters_ready_;
-	bool frame_ready_;
+	std::atomic<bool> parameters_ready_;
+	std::atomic<bool> frame_ready_;
+	std::atomic<uint64_t> rx_bytes_;
+	std::atomic<uint64_t> frames_parsed_;
+	std::mutex cloud_mutex_;
+	bool logged_first_frame_;
 	pcl::PointCloud<pcl::PointXYZI> input;
 	sensor_msgs::PointCloud2 output;
 
